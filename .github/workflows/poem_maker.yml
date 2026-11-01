@@ -40,8 +40,8 @@ jobs:
       # NEW: Install CPU-only PyTorch to save gigabytes of download time
       - name: Install Python Dependencies (Optimized for CPU)
         run: |
-          # Install lightweight CPU version of PyTorch first
-          pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+          # Install lightweight CPU version of PyTorch (Pinned to 2.5.1 to prevent weights_only error)
+          pip install "torch==2.5.1" "torchaudio==2.5.1" --index-url https://download.pytorch.org/whl/cpu
           # Then install TTS and the rest
           pip install -r requirements.txt
 
