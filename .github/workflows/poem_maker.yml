@@ -1,0 +1,65 @@
+name: Poem Maker Generator
+
+# This allows n8n to trigger the workflow via an HTTP Webhook (repository_dispatch)
+# workflow_dispatch allows you to click "Run workflow" manually in the GitHub UI for testing
+on:
+  repository_dispatch:
+    types: [generate_poem]
+  workflow_dispatch:
+    inputs:
+      test_payload:
+        description: 'JSON string for testing manually'
+        required: false
+        default: '{"scenes":[{"text":"Test manually","image_url":""}]}'
+
+jobs:
+  build-video:
+    runs-on: ubuntu-latest
+    
+    # We increase the timeout in case voice cloning takes a while on CPU
+    timeout-minutes: 30 
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip' # Caches dependencies to speed up future runs
+
+      - name: Install System Dependencies (FFmpeg)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Python Dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Save JSON Payload to File
+        # If triggered by n8n, write the client_payload to a file.
+        # If triggered manually, use the test_payload input.
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            cat << 'EOF' > payload.json
+            ${{ toJson(github.event.client_payload) }}
+          EOF
+          else
+            cat << 'EOF' > payload.json
+            ${{ github.event.inputs.test_payload }}
+          EOF
+          fi
+
+      - name: Run Orchestrator
+        run: python src/orchestrator.py --payload payload.json
+
+      # Optional: Upload final video as an artifact so it's permanently saved in GitHub Actions logs
+      - name: Upload Video to GitHub Artifacts
+        uses: actions/upload-artifact@v4
+        if: always() # Uploads even if the webhook delivery fails
+        with:
+          name: final_poem_video
+          path: workspace/final_poem.mp4
+          retention-days: 7
