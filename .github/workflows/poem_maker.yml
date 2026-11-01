@@ -58,6 +58,13 @@ jobs:
           fi
 
       - name: Run Orchestrator
+        env:
+          # These prevent PyTorch from deadlocking the GitHub Action CPU
+          OMP_NUM_THREADS: 1
+          MKL_NUM_THREADS: 1
+          OPENBLAS_NUM_THREADS: 1
+          VECLIB_MAXIMUM_THREADS: 1
+          NUMEXPR_NUM_THREADS: 1
         run: python src/orchestrator.py --payload payload.json
 
       - name: Upload Video to GitHub Artifacts
