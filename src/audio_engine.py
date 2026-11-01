@@ -1,5 +1,9 @@
 import argparse
 import os
+
+# Automatically accept Coqui TTS terms of service to prevent the script from asking for [y/n] input
+os.environ["COQUI_TOS_AGREED"] = "1"
+
 from TTS.api import TTS
 
 class AudioEngine:
@@ -10,14 +14,10 @@ class AudioEngine:
         print("TTS Model loaded successfully.")
 
     def generate_audio(self, text, output_path, voice_option="default", clone_audio_path=None):
-        """
-        Generates audio. Uses clone_audio_path if provided, otherwise uses voice_option.
-        """
         if not text:
             print("No text provided. Skipping audio generation.")
             return None
 
-        # Defaults
         if not voice_option:
             voice_option = "default_male"
 
@@ -33,8 +33,6 @@ class AudioEngine:
             )
         else:
             print(f"Using standard voice: {voice_option}")
-            # Note: For XTTS, standard voices are just default speaker names included in the model.
-            # We map 'default_male' or 'default_female' to known speakers in the model.
             speaker = "Damien Black" if "male" in voice_option else "Claribel Dervla"
             
             self.tts.tts_to_file(
@@ -47,7 +45,6 @@ class AudioEngine:
         print(f"Audio saved to {output_path}")
         return output_path
 
-# This allows the script to be run entirely on its own from the command line
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate Audio from Text.")
     parser.add_argument("--text", required=True, help="Text to speak")
