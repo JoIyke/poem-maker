@@ -57,15 +57,24 @@ jobs:
           EOF
           fi
 
+      # NEW STEP: Adds 8GB of Virtual RAM so the machine doesn't freeze!
+      - name: Create Swap Space (Prevent Out-of-Memory Freezes)
+        run: |
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
       - name: Run Orchestrator
         env:
-          # These prevent PyTorch from deadlocking the GitHub Action CPU
           OMP_NUM_THREADS: 1
           MKL_NUM_THREADS: 1
           OPENBLAS_NUM_THREADS: 1
           VECLIB_MAXIMUM_THREADS: 1
           NUMEXPR_NUM_THREADS: 1
-        run: python src/orchestrator.py --payload payload.json
+        # Added -u to python to force the logs to print instantly (unbuffered)
+        run: python -u src/orchestrator.py --payload payload.json
 
       - name: Upload Video to GitHub Artifacts
         uses: actions/upload-artifact@v4
