@@ -57,25 +57,16 @@ jobs:
           EOF
           fi
 
-      # NEW STEP: Adds 8GB of Virtual RAM so the machine doesn't freeze!
-      - name: Create Swap Space (Prevent Out-of-Memory Freezes)
-        run: |
-          # We use 'dd' instead of 'fallocate' to bypass GitHub runner filesystem restrictions
-          sudo dd if=/dev/zero of=/swapfile bs=1M count=8192 status=progress
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          free -h
+      - name: Pre-download NLTK (Prevents silent background hangs)
+        run: python -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab')"
 
-          
       - name: Run Orchestrator
         env:
+          # This is the most common fix for HuggingFace/TTS deadlocks on Linux VMs
+          TOKENIZERS_PARALLELISM: false
+          # Limits PyTorch to 1 stable thread to prevent CPU locking
           OMP_NUM_THREADS: 1
           MKL_NUM_THREADS: 1
-          OPENBLAS_NUM_THREADS: 1
-          VECLIB_MAXIMUM_THREADS: 1
-          NUMEXPR_NUM_THREADS: 1
-        # Added -u to python to force the logs to print instantly (unbuffered)
         run: python -u src/orchestrator.py --payload payload.json
 
       - name: Upload Video to GitHub Artifacts
