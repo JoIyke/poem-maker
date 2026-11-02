@@ -1,10 +1,8 @@
 import argparse
 import os
 
-# Automatically accept Coqui TTS terms of service
 os.environ["COQUI_TOS_AGREED"] = "1"
 
-# Force PyTorch to use only 1 CPU thread to prevent deadlocks
 import torch
 torch.set_num_threads(1)
 
@@ -12,9 +10,15 @@ from TTS.api import TTS
 
 class AudioEngine:
     def __init__(self, model_name="tts_models/multilingual/multi-dataset/xtts_v2"):
-        print(f"Loading TTS Model: {model_name} (This may take 1-2 minutes)...", flush=True)
-        self.tts = TTS(model_name).to("cpu")
-        print("TTS Model loaded into memory successfully!", flush=True)
+        print(f"Step 1: Initializing TTS class for {model_name}...", flush=True)
+        # We instantiate first
+        self.tts = TTS(model_name)
+        
+        print("Step 2: TTS Class initialized. Moving model to CPU...", flush=True)
+        # Then we move to CPU separately so we can trace where a freeze happens
+        self.tts = self.tts.to("cpu")
+        
+        print("Step 3: TTS Model fully loaded into memory successfully!", flush=True)
 
     def generate_audio(self, text, output_path, voice_option="default", clone_audio_path=None):
         if not text:
@@ -24,7 +28,7 @@ class AudioEngine:
         if not voice_option:
             voice_option = "default_male"
 
-        print(f"Generating audio for text: '{text[:20]}...' (Please wait, CPU generation is slow)", flush=True)
+        print(f"Generating audio for text: '{text[:20]}...' (Please wait, this will take time)", flush=True)
 
         if clone_audio_path and os.path.exists(clone_audio_path):
             print(f"Cloning voice from: {clone_audio_path}", flush=True)
