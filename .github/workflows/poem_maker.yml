@@ -60,12 +60,14 @@ jobs:
       # NEW STEP: Adds 8GB of Virtual RAM so the machine doesn't freeze!
       - name: Create Swap Space (Prevent Out-of-Memory Freezes)
         run: |
-          sudo fallocate -l 8G /swapfile
+          # We use 'dd' instead of 'fallocate' to bypass GitHub runner filesystem restrictions
+          sudo dd if=/dev/zero of=/swapfile bs=1M count=8192 status=progress
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
           free -h
 
+          
       - name: Run Orchestrator
         env:
           OMP_NUM_THREADS: 1
