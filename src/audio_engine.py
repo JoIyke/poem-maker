@@ -1,30 +1,33 @@
 import argparse
 import os
 
-# Automatically accept Coqui TTS terms of service to prevent the script from asking for [y/n] input
+# Automatically accept Coqui TTS terms of service
 os.environ["COQUI_TOS_AGREED"] = "1"
+
+# Force PyTorch to use only 1 CPU thread to prevent deadlocks
+import torch
+torch.set_num_threads(1)
 
 from TTS.api import TTS
 
 class AudioEngine:
     def __init__(self, model_name="tts_models/multilingual/multi-dataset/xtts_v2"):
-        print(f"Loading TTS Model: {model_name}...")
-        # We load it to CPU since standard GitHub runners don't have GPUs
+        print(f"Loading TTS Model: {model_name} (This may take 1-2 minutes)...", flush=True)
         self.tts = TTS(model_name).to("cpu")
-        print("TTS Model loaded successfully.")
+        print("TTS Model loaded into memory successfully!", flush=True)
 
     def generate_audio(self, text, output_path, voice_option="default", clone_audio_path=None):
         if not text:
-            print("No text provided. Skipping audio generation.")
+            print("No text provided. Skipping audio generation.", flush=True)
             return None
 
         if not voice_option:
             voice_option = "default_male"
 
-        print(f"Generating audio for text: '{text[:20]}...'")
+        print(f"Generating audio for text: '{text[:20]}...' (Please wait, CPU generation is slow)", flush=True)
 
         if clone_audio_path and os.path.exists(clone_audio_path):
-            print(f"Cloning voice from: {clone_audio_path}")
+            print(f"Cloning voice from: {clone_audio_path}", flush=True)
             self.tts.tts_to_file(
                 text=text, 
                 speaker_wav=clone_audio_path, 
@@ -32,7 +35,7 @@ class AudioEngine:
                 file_path=output_path
             )
         else:
-            print(f"Using standard voice: {voice_option}")
+            print(f"Using standard voice: {voice_option}", flush=True)
             speaker = "Damien Black" if "male" in voice_option else "Claribel Dervla"
             
             self.tts.tts_to_file(
@@ -42,7 +45,7 @@ class AudioEngine:
                 file_path=output_path
             )
             
-        print(f"Audio saved to {output_path}")
+        print(f"Audio successfully saved to {output_path}", flush=True)
         return output_path
 
 if __name__ == "__main__":
