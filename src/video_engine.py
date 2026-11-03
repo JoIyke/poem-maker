@@ -24,7 +24,7 @@ class VideoEngine:
         except Exception:
             return {"duration": 3.0, "width": 1080, "height": 1920}
 
-def create_scene_clip(self, image_path, audio_path, output_path, width=1080, height=1920, motion="none", caption="", font_path="workspace/font.ttf", is_first_scene=False, transition="fade", hook_text=""):
+    def create_scene_clip(self, image_path, audio_path, output_path, width=1080, height=1920, motion="none", caption="", font_path="workspace/font.ttf", is_first_scene=False, transition="fade", hook_text=""):
         print(f"Creating scene clip: {output_path} | Size: {width}x{height} | Motion: {motion}", flush=True)
         
         audio_info = self.get_media_info(audio_path)
