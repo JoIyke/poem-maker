@@ -1,41 +1,51 @@
 import json
 import argparse
 import os
+import random
 from utils import download_file, create_fallback_image, send_webhook, download_font
 from audio_engine import AudioEngine
 from video_engine import VideoEngine
 
-font_path = download_font("workspace/font.ttf")
-
 def process_job(json_payload_path):
-    print(f"Reading payload from {json_payload_path}")
+    print(f"Reading payload from {json_payload_path}", flush=True)
     with open(json_payload_path, 'r') as f:
         job_data = json.load(f)
 
-    # 1. Extract global settings with defaults
+    # 1. Extract global settings
     webhook_url = job_data.get("webhook_url", "")
     bgm_url = job_data.get("bgm_url", "")
     global_voice = job_data.get("global_voice", "default_male")
+    
+    # NEW GLOBAL SETTINGS
+    # Robustly check for true/false even if n8n sends it as a string
+    caption_enabled = str(job_data.get("caption", "false")).lower() in ["true", "1", "yes"]
+    global_motion = job_data.get("motion", "random") 
+    global_transition = job_data.get("transition", "none")
+    
     scenes = job_data.get("scenes", [])
 
     if not scenes:
-        print("No scenes provided in JSON. Exiting.")
+        print("No scenes provided in JSON. Exiting.", flush=True)
         return
 
-    # Create workspace directories
     os.makedirs("workspace", exist_ok=True)
     
-    # 2. Download BGM if provided
+    # 2. Download BGM and Font
     bgm_path = None
     if bgm_url:
         bgm_path = download_file(bgm_url, "workspace/bgm.mp3")
+        
+    font_path = download_font("workspace/font.ttf")
 
-    # 3. Initialize Engines (Loads heavy AI model into RAM just once)
-    print("Initializing Engines...")
+    # 3. Initialize Engines
+    print("Initializing Engines...", flush=True)
     audio_engine = AudioEngine()
     video_engine = VideoEngine()
 
     scene_clips = []
+    
+    # List of motions to randomly pick from if set to 'random'
+    motion_choices = ["zoom_in", "zoom_out", "pan_right", "pan_left"]
 
     # 4. Process each scene
     for i, scene in enumerate(scenes):
@@ -45,11 +55,15 @@ def process_job(json_payload_path):
         image_url = scene.get("image_url", "")
         voice_option = scene.get("voice_option") or global_voice
         clone_url = scene.get("clone_url", "")
-        
-        # NEW PARAMS: Get the layout preferences (with fallbacks)
-        motion = scene.get("motion", "none") 
-        transition = scene.get("transition", "none")
-        caption = scene.get("caption", "")
+
+        # Determine Scene Motion
+        if global_motion.lower() == "random":
+            current_motion = random.choice(motion_choices)
+        else:
+            current_motion = global_motion
+
+        # Determine Scene Caption
+        current_caption = text if caption_enabled else ""
 
         # A. Prepare Image
         img_path = f"workspace/scene_{i}_img.jpg"
@@ -60,7 +74,7 @@ def process_job(json_payload_path):
         else:
             create_fallback_image(img_path)
 
-        # B. Prepare Voice Clone (if any)
+        # B. Prepare Voice Clone
         clone_path = None
         if clone_url:
             clone_path = f"workspace/scene_{i}_clone.wav"
@@ -75,16 +89,16 @@ def process_job(json_payload_path):
             clone_audio_path=clone_path
         )
 
-        # D. Combine into Scene Video (Now passing new options)
+        # D. Combine into Scene Video
         clip_path = f"workspace/scene_{i}_clip.mp4"
         if os.path.exists(audio_path) and os.path.exists(img_path):
             video_engine.create_scene_clip(
                 image_path=img_path, 
                 audio_path=audio_path, 
                 output_path=clip_path,
-                motion=motion,
-                caption=caption,
-                transition=transition,
+                motion=current_motion,      # Passes the randomized (or forced) motion
+                caption=current_caption,    # Passes the text if global caption is true
+                transition=global_transition,
                 font_path=font_path
             )
             scene_clips.append(clip_path)
@@ -93,7 +107,7 @@ def process_job(json_payload_path):
 
     # 5. Final Assembly
     if not scene_clips:
-        print("No valid scenes generated. Aborting.")
+        print("No valid scenes generated. Aborting.", flush=True)
         return
 
     final_video_path = "workspace/final_poem.mp4"
@@ -103,7 +117,7 @@ def process_job(json_payload_path):
     if os.path.exists(final_video_path):
         send_webhook(webhook_url, final_video_path)
     else:
-        print("Error: Final video was not created.")
+        print("Error: Final video was not created.", flush=True)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Orchestrate the video generation.")
