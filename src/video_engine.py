@@ -24,14 +24,19 @@ class VideoEngine:
         except Exception:
             return {"duration": 3.0, "width": 1080, "height": 1920}
 
-    def create_scene_clip(self, image_path, audio_path, output_path, width=1080, height=1920, motion="none", caption="", font_path="workspace/font.ttf"):
+    def create_scene_clip(self, image_path, audio_path, output_path, width=1080, height=1920, motion="none", caption="", font_path="workspace/font.ttf", is_first_scene=False, transition="fade"):
         print(f"Creating scene clip: {output_path} | Size: {width}x{height} | Motion: {motion}", flush=True)
         
         audio_info = self.get_media_info(audio_path)
         raw_duration = audio_info.get("duration", 3.0)
         
-        # Add 0.5s padding so the crossfade transition doesn't cut off speech
-        padded_duration = raw_duration + 0.5
+        # TRANSITION TIMING BUFFER:
+        # 0.6s crossfade duration
+        trans_dur = 0.6 if transition == "fade" else 0.0
+        lead_in = 0.0 if (is_first_scene or transition != "fade") else trans_dur
+        lead_out = trans_dur if transition == "fade" else 0.2
+        
+        padded_duration = raw_duration + lead_in + lead_out
         frames = max(25, int(padded_duration * 25))
         
         # 1. Base scale: Prescale to 1.5x resolution to allow smooth Ken Burns movement
@@ -40,7 +45,7 @@ class VideoEngine:
             f"scale={base_w}:{base_h}:force_original_aspect_ratio=increase,crop={base_w}:{base_h}"
         ]
         
-        # 2. Dynamic Ken Burns Math (Using literal {frames} integer so FFmpeg never fails)
+        # 2. Dynamic Ken Burns Math (Using literal {frames} integer)
         if motion == "zoom_in":
             filters.append(f"zoompan=z='1.0+0.25*(on/{frames})':x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2':d={frames}:s={width}x{height}:fps=25")
         elif motion == "zoom_out":
@@ -69,11 +74,20 @@ class VideoEngine:
 
         vf_string = ",".join(filters)
 
-        # Standardized to 44.1kHz stereo audio
+        # 4. Audio Buffering (The Speech-Gap Solution)
+        af_list = []
+        if lead_in > 0:
+            delay_ms = int(lead_in * 1000)
+            af_list.append(f"adelay={delay_ms}|{delay_ms}")
+        if lead_out > 0:
+            af_list.append(f"apad=pad_dur={lead_out}")
+            
+        af_string = ",".join(af_list) if af_list else "anull"
+
         cmd = [
             "ffmpeg", "-nostdin", "-y", "-loop", "1", "-i", image_path, "-i", audio_path,
             "-vf", vf_string,
-            "-af", "apad=pad_dur=0.5",
+            "-af", af_string,
             "-c:v", "libx264", "-tune", "stillimage",
             "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
             "-pix_fmt", "yuv420p", "-t", str(padded_duration), output_path
@@ -81,13 +95,12 @@ class VideoEngine:
         
         result = subprocess.run(cmd)
         
-        # Fallback safety: If zoompan somehow fails, create a static clean clip
         if result.returncode != 0 or not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
             print(f"Warning: Motion failed for {output_path}, using static fallback...", flush=True)
             fallback_cmd = [
                 "ffmpeg", "-nostdin", "-y", "-loop", "1", "-i", image_path, "-i", audio_path,
                 "-vf", f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},fps=25",
-                "-af", "apad=pad_dur=0.5",
+                "-af", af_string,
                 "-c:v", "libx264", "-tune", "stillimage",
                 "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
                 "-pix_fmt", "yuv420p", "-t", str(padded_duration), output_path
@@ -110,9 +123,9 @@ class VideoEngine:
             if os.path.exists(list_file):
                 os.remove(list_file)
         else:
-            # TRUE CROSSFADE (xfade)
+            # TRUE CROSSFADE (0.6s)
             durations = [self.get_media_info(c).get("duration", 3.0) for c in clip_paths]
-            trans_dur = 0.5 
+            trans_dur = 0.6 
             
             inputs = []
             for c in clip_paths:
