@@ -62,3 +62,23 @@ def send_webhook(webhook_url, video_path, status="success"):
         print(f"Webhook response: {response.status_code} - {response.text}")
     except Exception as e:
         print(f"Failed to send webhook: {e}")
+
+
+def download_font(dest_path="workspace/font.ttf"):
+    """
+    Downloads a standard, good-looking font (Roboto Bold) for the video captions.
+    """
+    if os.path.exists(dest_path):
+        return dest_path
+        
+    print(f"Downloading default font to {dest_path}...")
+    font_url = "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf"
+    try:
+        response = requests.get(font_url, stream=True, timeout=10)
+        response.raise_for_status()
+        with open(dest_path, 'wb') as f:
+            f.write(response.content)
+        return dest_path
+    except Exception as e:
+        print(f"Failed to download font: {e}")
+        return None
