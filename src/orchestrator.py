@@ -101,9 +101,12 @@ def process_job(json_payload_path):
                 height=height,
                 motion=current_motion,
                 caption=current_caption,
-                font_path=font_path
+                font_path=font_path,
+                is_first_scene=(i == 0),
+                transition=global_transition
             )
             scene_clips.append(clip_path)
+
 
     if not scene_clips:
         print("No valid scenes generated. Aborting.", flush=True)
