@@ -24,14 +24,12 @@ class VideoEngine:
         except Exception:
             return {"duration": 3.0, "width": 1080, "height": 1920}
 
-    def create_scene_clip(self, image_path, audio_path, output_path, width=1080, height=1920, motion="none", caption="", font_path="workspace/font.ttf", is_first_scene=False, transition="fade"):
+def create_scene_clip(self, image_path, audio_path, output_path, width=1080, height=1920, motion="none", caption="", font_path="workspace/font.ttf", is_first_scene=False, transition="fade", hook_text=""):
         print(f"Creating scene clip: {output_path} | Size: {width}x{height} | Motion: {motion}", flush=True)
         
         audio_info = self.get_media_info(audio_path)
         raw_duration = audio_info.get("duration", 3.0)
         
-        # TRANSITION TIMING BUFFER:
-        # 0.6s crossfade duration
         trans_dur = 0.6 if transition == "fade" else 0.0
         lead_in = 0.0 if (is_first_scene or transition != "fade") else trans_dur
         lead_out = trans_dur if transition == "fade" else 0.2
@@ -39,13 +37,12 @@ class VideoEngine:
         padded_duration = raw_duration + lead_in + lead_out
         frames = max(25, int(padded_duration * 25))
         
-        # 1. Base scale: Prescale to 1.5x resolution to allow smooth Ken Burns movement
         base_w, base_h = int(width * 1.5), int(height * 1.5)
         filters = [
             f"scale={base_w}:{base_h}:force_original_aspect_ratio=increase,crop={base_w}:{base_h}"
         ]
         
-        # 2. Dynamic Ken Burns Math (Using literal {frames} integer)
+        # Ken Burns Math
         if motion == "zoom_in":
             filters.append(f"zoompan=z='1.0+0.25*(on/{frames})':x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2':d={frames}:s={width}x{height}:fps=25")
         elif motion == "zoom_out":
@@ -57,7 +54,7 @@ class VideoEngine:
         else:
             filters.append(f"fps=25,scale={width}:{height}")
 
-        # 3. Captions with auto-wrap
+        # Static / Normal Captions (only if requested)
         if caption:
             caption_file = output_path.replace(".mp4", "_caption.txt")
             wrap_width = 28 if width < height else 48
@@ -72,9 +69,23 @@ class VideoEngine:
                 f"x=(w-text_w)/2:y=h-th-120:text_align=M"
             )
 
+        # VIRAL HOOK TEXT (Displayed in upper area for first 3.5 seconds)
+        if hook_text and is_first_scene:
+            hook_file = output_path.replace(".mp4", "_hook.txt")
+            hook_wrapped = "\n".join(textwrap.wrap(hook_text.upper(), width=24 if width < height else 40))
+            with open(hook_file, "w", encoding="utf-8") as f:
+                f.write(hook_wrapped)
+            
+            hook_fontsize = 52 if width < height else 58
+            hook_y = "h*0.18" if width < height else "h*0.12"
+            filters.append(
+                f"drawtext=fontfile='{font_path}':textfile='{hook_file}':"
+                f"fontcolor=white:fontsize={hook_fontsize}:box=1:boxcolor=red@0.85:boxborderw=20:"
+                f"x=(w-text_w)/2:y={hook_y}:text_align=M:enable='between(t,0,3.5)'"
+            )
+
         vf_string = ",".join(filters)
 
-        # 4. Audio Buffering (The Speech-Gap Solution)
         af_list = []
         if lead_in > 0:
             delay_ms = int(lead_in * 1000)
@@ -93,20 +104,7 @@ class VideoEngine:
             "-pix_fmt", "yuv420p", "-t", str(padded_duration), output_path
         ]
         
-        result = subprocess.run(cmd)
-        
-        if result.returncode != 0 or not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
-            print(f"Warning: Motion failed for {output_path}, using static fallback...", flush=True)
-            fallback_cmd = [
-                "ffmpeg", "-nostdin", "-y", "-loop", "1", "-i", image_path, "-i", audio_path,
-                "-vf", f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},fps=25",
-                "-af", af_string,
-                "-c:v", "libx264", "-tune", "stillimage",
-                "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
-                "-pix_fmt", "yuv420p", "-t", str(padded_duration), output_path
-            ]
-            subprocess.run(fallback_cmd)
-
+        subprocess.run(cmd)
         return output_path
 
     def concatenate_clips(self, clip_paths, final_output_path, bgm_path=None, transition="fade"):
