@@ -127,13 +127,16 @@ def process_job(json_payload_path):
 
     final_video_path = "workspace/final_poem.mp4"
 
-    # 2. Burn speaker-aware animated captions if requested
-    if caption_mode == "animated":
+    # 2. Burn captions if requested
+    if caption_mode in ["dialogue", "multispeaker"]:
         caption_engine = CaptionEngine()
-        caption_engine.burn_captions(raw_video_path, final_video_path, scene_timeline, width=width, height=height)
+        caption_engine.burn_captions(raw_video_path, final_video_path, scene_timeline=scene_timeline, mode="dialogue", width=width, height=height)
+    elif caption_mode == "animated":
+        caption_engine = CaptionEngine()
+        caption_engine.burn_captions(raw_video_path, final_video_path, mode="animated", width=width, height=height)
     else:
         os.rename(raw_video_path, final_video_path)
-
+        
     # 3. Delivery
     if os.path.exists(final_video_path):
         send_webhook(webhook_url, final_video_path)
