@@ -3,14 +3,14 @@ import os
 import subprocess
 from faster_whisper import WhisperModel
 
-# Colors in BGR format for ASS Subtitles
+# High-contrast vibrant colors in BGR format for ASS Subtitles
 SPEAKER_COLORS = [
-    "&H0000FFFF&",  # Yellow
+    "&H0000FFFF&",  # Electric Yellow
     "&H00FFFF00&",  # Cyan / Aqua
     "&H0000FF66&",  # Neon Green
-    "&H00FF66FF&",  # Magenta / Pink
-    "&H0000A5FF&",  # Vibrant Orange
-    "&H00FFFFFF&"   # White
+    "&H00FF88FF&",  # Soft Pink
+    "&H0000A5FF&",  # Orange
+    "&H00FFFFFF&"   # Crisp White
 ]
 
 class CaptionEngine:
@@ -25,23 +25,84 @@ class CaptionEngine:
         centis = int((secs - int(secs)) * 100)
         return f"{hours}:{minutes:02d}:{int(secs):02d}.{centis:02d}"
 
-    def _get_speaker_for_time(self, timestamp, scene_timeline):
-        """Looks up which speaker is active at this exact second."""
+    def _get_speaker_info(self, timestamp, scene_timeline, unique_speakers):
+        """Finds who is speaking and returns their index (for left/right alignment and color)."""
+        speaker_name = unique_speakers[0] if unique_speakers else "Speaker"
         for item in scene_timeline:
             if item["start"] <= timestamp <= item["end"]:
-                return item["speaker"]
-        return scene_timeline[-1]["speaker"] if scene_timeline else "Speaker"
+                speaker_name = item["speaker"]
+                break
 
-    def generate_animated_ass(self, video_path, ass_path, scene_timeline, width=1080, height=1920):
-        print(f"Transcribing {video_path} for speaker-aware captions...", flush=True)
+        try:
+            spk_idx = unique_speakers.index(speaker_name)
+        except ValueError:
+            spk_idx = 0
+
+        color = SPEAKER_COLORS[spk_idx % len(SPEAKER_COLORS)]
+        # Speaker 0 (1st) on Left, Speaker 1 (2nd) on Right, Speaker 2 (3rd) on Left, etc.
+        style = "BubbleLeft" if (spk_idx % 2 == 0) else "BubbleRight"
+        return speaker_name, spk_idx, color, style
+
+    def generate_dialogue_ass(self, video_path, ass_path, scene_timeline, width=1080, height=1920):
+        """
+        Creates sentence-level speech/comment bubbles in corners for multiple speakers.
+        No emojis, no speaker names, opaque dark bubble background.
+        """
+        print(f"Generating Multi-Speaker Dialogue Bubbles for {video_path}...", flush=True)
+        segments, _ = self.model.transcribe(video_path, word_timestamps=False)
+
+        fontsize = 46 if width < height else 38
+        margin_v = int(height * 0.22) if width < height else int(height * 0.12)
+        unique_speakers = list(dict.fromkeys([s["speaker"] for s in scene_timeline]))
+
+        # BorderStyle: 3 creates an opaque comment bubble behind the text
+        # Outline: 10 acts as padding for the bubble
+        # OutlineColour: &HCC161616& is an 80% opaque dark charcoal bubble
+        ass_content = [
+            "[Script Info]",
+            "ScriptType: v4.00+",
+            f"PlayResX: {width}",
+            f"PlayResY: {height}",
+            "",
+            "[V4+ Styles]",
+            "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+            # Speaker 1: Lower-Left Corner (Alignment 1), constrained to left side
+            f"Style: BubbleLeft,Roboto-Bold,{fontsize},&H00FFFFFF,&H000000FF,&HCC161616,&H00000000,-1,0,0,0,100,100,0,0,3,10,0,1,60,340,{margin_v},1",
+            # Speaker 2: Lower-Right Corner (Alignment 3), constrained to right side
+            f"Style: BubbleRight,Roboto-Bold,{fontsize},&H00FFFFFF,&H000000FF,&HCC161616,&H00000000,-1,0,0,0,100,100,0,0,3,10,0,3,340,60,{margin_v},1",
+            "",
+            "[Events]",
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
+        ]
+
+        for segment in segments:
+            clean_text = segment.text.strip()
+            if not clean_text:
+                continue
+
+            mid_point = (segment.start + segment.end) / 2
+            _, _, color, style_name = self._get_speaker_info(mid_point, scene_timeline, unique_speakers)
+
+            start_str = self._format_timestamp(segment.start)
+            end_str = self._format_timestamp(segment.end)
+
+            # Renders full phrase in the speaker's assigned color inside their corner bubble
+            dialogue = f"{{\\c{color}}}{clean_text}"
+            ass_content.append(f"Dialogue: 0,{start_str},{end_str},{style_name},,0,0,0,,{dialogue}")
+
+        with open(ass_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(ass_content))
+
+    def generate_animated_ass(self, video_path, ass_path, width=1080, height=1920):
+        """
+        Restored clean single-speaker animated captions (Hormozi style).
+        Centered, 3-4 words, active word highlighted in bright yellow, zero emojis.
+        """
+        print(f"Generating Clean Animated Captions for {video_path}...", flush=True)
         segments, _ = self.model.transcribe(video_path, word_timestamps=True)
 
-        fontsize = 64 if width < height else 48
+        fontsize = 68 if width < height else 50
         margin_v = int(height * 0.28) if width < height else int(height * 0.15)
-
-        # Build mapping of unique speakers to colors
-        unique_speakers = list(dict.fromkeys([s["speaker"] for s in scene_timeline]))
-        speaker_color_map = {spk: SPEAKER_COLORS[idx % len(SPEAKER_COLORS)] for idx, spk in enumerate(unique_speakers)}
 
         ass_content = [
             "[Script Info]",
@@ -69,33 +130,30 @@ class CaptionEngine:
                     start_str = self._format_timestamp(active_word.start)
                     end_str = self._format_timestamp(active_word.end)
 
-                    # Identify speaker and their assigned color
-                    current_speaker = self._get_speaker_for_time(active_word.start, scene_timeline)
-                    highlight_color = speaker_color_map.get(current_speaker, "&H0000FFFF&")
-
-                    # Speaker label badge: e.g. 🎙️ JOSHUA:
-                    badge = f"{{\\c{highlight_color}\\b1\\fs{int(fontsize * 0.65)}}}🎙️ {current_speaker.upper()}:\\N{{\\r\\fs{fontsize}}}"
-
                     line_pieces = []
                     for idx, w in enumerate(chunk):
                         word_text = w.word.strip().upper()
                         if idx == current_idx:
-                            # Highlighted active word
-                            line_pieces.append(f"{{\\c{highlight_color}\\b1}}{word_text}{{\\r}}")
+                            # Highlight active word in Bright Yellow (&H0000FFFF&)
+                            line_pieces.append(f"{{\\c&H0000FFFF&\\b1}}{word_text}{{\\r}}")
                         else:
                             line_pieces.append(word_text)
 
-                    dialogue_text = badge + " ".join(line_pieces)
+                    dialogue_text = " ".join(line_pieces)
                     ass_content.append(f"Dialogue: 0,{start_str},{end_str},Default,,0,0,0,,{dialogue_text}")
 
         with open(ass_path, "w", encoding="utf-8") as f:
             f.write("\n".join(ass_content))
 
-    def burn_captions(self, input_video, output_video, scene_timeline, width=1080, height=1920):
+    def burn_captions(self, input_video, output_video, scene_timeline=None, mode="dialogue", width=1080, height=1920):
         ass_path = input_video.replace(".mp4", "_captions.ass")
-        self.generate_animated_ass(input_video, ass_path, scene_timeline, width, height)
 
-        print(f"Burning speaker-aware captions onto {output_video}...", flush=True)
+        if mode == "dialogue":
+            self.generate_dialogue_ass(input_video, ass_path, scene_timeline or [], width, height)
+        else:
+            self.generate_animated_ass(input_video, ass_path, width, height)
+
+        print(f"Burning captions ({mode}) onto {output_video}...", flush=True)
         cmd = [
             "ffmpeg", "-nostdin", "-y", "-i", input_video,
             "-vf", f"ass={ass_path}:fontsdir=workspace",
@@ -106,4 +164,5 @@ class CaptionEngine:
         if os.path.exists(ass_path):
             os.remove(ass_path)
             
+        print(f"Captioned video ready: {output_video}", flush=True)
         return output_video
